@@ -1,8 +1,9 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 BEGIN;
+
 -- ---------------------------------------------------------------------
--- 1. Šifarnici (upravlja administrator)
+-- 1. Lookup tables (managed by the administrator)
 -- ---------------------------------------------------------------------
 CREATE TABLE meal_types (
     id   int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -38,11 +39,11 @@ CREATE TABLE units (
 CREATE TABLE preparation_types (
     id                int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name              varchar(100) NOT NULL UNIQUE,
-    requires_duration boolean NOT NULL DEFAULT true   -- false: bez termičke obrade, ostalo
+    requires_duration boolean NOT NULL DEFAULT true   -- false: no heat treatment, other
 );
 
 -- ---------------------------------------------------------------------
--- 2. Korisnici i autentifikacija
+-- 2. Users and authentication
 -- ---------------------------------------------------------------------
 CREATE TABLE users (
     id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -50,7 +51,7 @@ CREATE TABLE users (
     email             varchar(255) NOT NULL,
     password_hash     varchar(255) NOT NULL,
     role              text NOT NULL DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN')),
-    is_active         boolean NOT NULL DEFAULT false,        -- true nakon aktivacionog mejla
+    is_active         boolean NOT NULL DEFAULT false,        -- true after the activation email is confirmed
     profile_image_url text,
     bio               text,
     region_name       varchar(150),
@@ -73,16 +74,16 @@ CREATE TABLE user_tokens (
 CREATE INDEX ix_user_tokens_user ON user_tokens (user_id);
 
 -- ---------------------------------------------------------------------
--- 3. Namirnice i alergeni
+-- 3. Ingredients and allergens
 -- ---------------------------------------------------------------------
 CREATE TABLE ingredients (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name        varchar(150) NOT NULL,
     category_id int NOT NULL REFERENCES ingredient_categories(id),
-    unit_id     int NOT NULL REFERENCES units(id),            -- podrazumevana merna jedinica
+    unit_id     int NOT NULL REFERENCES units(id),            -- default unit of measure
     type        text NOT NULL DEFAULT 'GENERIC' CHECK (type IN ('GENERIC', 'BRANDED')),
-    text_color  char(7) CHECK (text_color ~ '^#[0-9A-Fa-f]{6}$'),  -- boja teksta za brendirane
-    quantity_optional boolean NOT NULL DEFAULT false,         -- "so po ukusu"
+    text_color  char(7) CHECK (text_color ~ '^#[0-9A-Fa-f]{6}$'),  -- text color for branded ingredients
+    quantity_optional boolean NOT NULL DEFAULT false,         -- e.g. "salt to taste"
     barcode     varchar(50),
     CHECK (type = 'BRANDED' OR text_color IS NULL)
 );
@@ -99,7 +100,7 @@ CREATE TABLE ingredient_allergens (
 CREATE TABLE category_suggestions (
     id                      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id                 bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    item_name               varchar(150) NOT NULL,            -- element za koji treba nova kategorija
+    item_name               varchar(150) NOT NULL,            -- the item that needs a new category
     suggested_name          varchar(100) NOT NULL,
     explanation             text,
     status                  text NOT NULL DEFAULT 'PENDING'
@@ -113,7 +114,7 @@ CREATE TABLE category_suggestions (
 CREATE INDEX ix_category_suggestions_status ON category_suggestions (status);
 
 -- ---------------------------------------------------------------------
--- 4. Recepti
+-- 4. Recipes
 -- ---------------------------------------------------------------------
 CREATE TABLE recipes (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -121,24 +122,24 @@ CREATE TABLE recipes (
     title               varchar(200) NOT NULL,
     dish_type_id        int NOT NULL REFERENCES dish_types(id),
     servings            smallint NOT NULL CHECK (servings > 0),
-    total_time_minutes  int NOT NULL DEFAULT 0 CHECK (total_time_minutes >= 0),  -- zbir koraka (trigger)
+    total_time_minutes  int NOT NULL DEFAULT 0 CHECK (total_time_minutes >= 0),  -- sum of step durations (trigger)
     video_url           text,
-    video_is_upload     boolean NOT NULL DEFAULT false,       -- true: otpremljen fajl, false: link
-    story               text,                                 -- "Priča o receptu"
-    -- poreklo recepta (koordinate se čuvaju da se geokodiranje ne ponavlja)
+    video_is_upload     boolean NOT NULL DEFAULT false,       -- true: uploaded file, false: link
+    story               text,                                 -- "Recipe story"
+    -- recipe origin (coordinates are stored so geocoding is not repeated)
     origin_country      varchar(100),
     origin_region       varchar(100),
     origin_city         varchar(100),
     origin_lat          double precision CHECK (origin_lat BETWEEN -90 AND 90),
     origin_lng          double precision CHECK (origin_lng BETWEEN -180 AND 180),
-    -- region autora u trenutku objave (promena regiona ne menja stare recepte)
+    -- author's region at publication time (changing region does not affect old recipes)
     author_region_name  varchar(150),
     author_region_lat   double precision,
     author_region_lng   double precision,
-    -- modifikacija postojećeg recepta
+    -- modification of an existing recipe
     original_recipe_id  bigint REFERENCES recipes(id) ON DELETE SET NULL,
     modification_note   text,
-    is_removed          boolean NOT NULL DEFAULT false,       -- uklonjen sadržaj (moderacija)
+    is_removed          boolean NOT NULL DEFAULT false,       -- removed content (moderation)
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now(),
     CHECK ((origin_lat IS NULL) = (origin_lng IS NULL)),
@@ -169,7 +170,7 @@ CREATE TABLE recipe_ingredients (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     recipe_id     bigint NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
     ingredient_id bigint NOT NULL REFERENCES ingredients(id),
-    quantity      numeric(12,3) CHECK (quantity > 0),         -- NULL: "so po ukusu"
+    quantity      numeric(12,3) CHECK (quantity > 0),         -- NULL: "salt to taste"
     unit_id       int REFERENCES units(id),
     position      smallint NOT NULL DEFAULT 0,
     CHECK (quantity IS NULL OR unit_id IS NOT NULL)
@@ -190,7 +191,7 @@ CREATE TABLE recipe_steps (
 CREATE INDEX ix_recipe_steps_prep ON recipe_steps (preparation_type_id);
 
 -- ---------------------------------------------------------------------
--- 5. Omiljeni, ocene, komentari, fotografije
+-- 5. Favorites, ratings, comments, photos
 -- ---------------------------------------------------------------------
 CREATE TABLE favorite_recipes (
     user_id    bigint NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
@@ -213,7 +214,7 @@ CREATE TABLE comments (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     recipe_id  bigint NOT NULL REFERENCES recipes(id)  ON DELETE CASCADE,
     author_id  bigint NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
-    parent_id  bigint REFERENCES comments(id) ON DELETE CASCADE,   -- ugnježdeni odgovori
+    parent_id  bigint REFERENCES comments(id) ON DELETE CASCADE,   -- nested replies
     body       text NOT NULL,
     is_edited  boolean NOT NULL DEFAULT false,
     is_removed boolean NOT NULL DEFAULT false,
@@ -223,7 +224,7 @@ CREATE TABLE comments (
 CREATE INDEX ix_comments_recipe ON comments (recipe_id, created_at);
 CREATE INDEX ix_comments_parent ON comments (parent_id);
 
--- jedna tabela za sve fotografije: recept (glavna/dodatne), korak ili komentar
+-- one table for all photos: recipe (main/additional), step or comment
 CREATE TABLE photos (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uploaded_by bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -244,7 +245,7 @@ CREATE INDEX ix_photos_step    ON photos (step_id);
 CREATE INDEX ix_photos_comment ON photos (comment_id);
 
 -- ---------------------------------------------------------------------
--- 6. Prijave neprikladnog sadržaja
+-- 6. Reports of inappropriate content
 -- ---------------------------------------------------------------------
 CREATE TABLE reports (
     id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -271,7 +272,7 @@ CREATE INDEX ix_reports_status   ON reports (status);
 CREATE INDEX ix_reports_reporter ON reports (reporter_id);
 
 -- ---------------------------------------------------------------------
--- 7. Evidencija namirnica korisnika
+-- 7. User's pantry (owned ingredients)
 -- ---------------------------------------------------------------------
 CREATE TABLE user_ingredients (
     id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -281,7 +282,7 @@ CREATE TABLE user_ingredients (
     quantity           numeric(12,3) CHECK (quantity > 0),
     unit_id            int REFERENCES units(id),
     expiry_date        date,
-    expiry_notified_at timestamptz,                          -- da se obaveštenje ne šalje dvaput
+    expiry_notified_at timestamptz,                          -- so the notification is not sent twice
     barcode            varchar(50),
     is_synced          boolean NOT NULL DEFAULT false,
     CHECK (quantity IS NULL OR unit_id IS NOT NULL)
@@ -290,15 +291,15 @@ CREATE INDEX ix_user_ingredients_user   ON user_ingredients (user_id);
 CREATE INDEX ix_user_ingredients_expiry ON user_ingredients (expiry_date) WHERE expiry_date IS NOT NULL;
 
 -- ---------------------------------------------------------------------
--- 8. Liste za kupovinu
+-- 8. Shopping lists
 -- ---------------------------------------------------------------------
 CREATE TABLE shopping_lists (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id          bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name             varchar(150) NOT NULL,
     created_at       timestamptz NOT NULL DEFAULT now(),
-    planned_at       timestamptz,                            -- planirani datum/vreme (podsetnik)
-    is_permanent     boolean NOT NULL DEFAULT false,         -- trajno aktivna lista
+    planned_at       timestamptz,                            -- planned date/time (reminder)
+    is_permanent     boolean NOT NULL DEFAULT false,         -- permanently active list
     status           text NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'ARCHIVED')),
     archived_at      timestamptz,
     reminder_sent_at timestamptz
@@ -319,7 +320,7 @@ CREATE TABLE shopping_list_items (
 );
 
 -- ---------------------------------------------------------------------
--- 9. Notifikacije
+-- 9. Notifications
 -- ---------------------------------------------------------------------
 CREATE TABLE notifications (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -331,14 +332,14 @@ CREATE TABLE notifications (
     message     text NOT NULL,
     target_type text CHECK (target_type IN
                     ('RECIPE', 'COMMENT', 'REPORT', 'CATEGORY_SUGGESTION', 'SHOPPING_LIST', 'USER_INGREDIENT')),
-    target_id   bigint,                                      -- polimorfna referenca (bez FK)
+    target_id   bigint,                                      -- polymorphic reference (no FK)
     is_read     boolean NOT NULL DEFAULT false,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_notifications_user ON notifications (user_id, created_at DESC);
 CREATE INDEX ix_notifications_unread ON notifications (user_id) WHERE NOT is_read;
 
--- aktivnosti korisnika (pregled / kuvanje recepta)
+-- user activities (viewing / cooking a recipe)
 CREATE TABLE user_activities (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id     bigint NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
@@ -350,7 +351,7 @@ CREATE INDEX ix_user_activities_user   ON user_activities (user_id, occurred_at 
 CREATE INDEX ix_user_activities_recipe ON user_activities (recipe_id);
 
 -- ---------------------------------------------------------------------
--- 10. Trigeri
+-- 10. Triggers
 -- ---------------------------------------------------------------------
 CREATE FUNCTION fn_set_updated_at() RETURNS trigger AS $$
 BEGIN
@@ -362,7 +363,7 @@ CREATE TRIGGER trg_recipes_updated  BEFORE UPDATE ON recipes  FOR EACH ROW EXECU
 CREATE TRIGGER trg_comments_updated BEFORE UPDATE ON comments FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
 CREATE TRIGGER trg_ratings_updated  BEFORE UPDATE ON ratings  FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
 
--- region autora se kopira u recept pri kreiranju
+-- the author's region is copied into the recipe on creation
 CREATE FUNCTION fn_recipe_author_region() RETURNS trigger AS $$
 BEGIN
     IF NEW.author_region_name IS NULL THEN
@@ -376,14 +377,14 @@ END $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_recipe_author_region BEFORE INSERT ON recipes
     FOR EACH ROW EXECUTE FUNCTION fn_recipe_author_region();
 
--- trajanje je obavezno osim za tipove pripreme sa requires_duration = false
+-- duration is required except for preparation types with requires_duration = false
 CREATE FUNCTION fn_step_validate() RETURNS trigger AS $$
 DECLARE
     v_required boolean;
 BEGIN
     SELECT requires_duration INTO v_required FROM preparation_types WHERE id = NEW.preparation_type_id;
     IF v_required AND NEW.duration_minutes IS NULL THEN
-        RAISE EXCEPTION 'Trajanje je obavezno za izabrani tip pripreme' USING ERRCODE = '23514';
+        RAISE EXCEPTION 'Duration is required for the selected preparation type' USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END $$ LANGUAGE plpgsql;
@@ -391,7 +392,7 @@ END $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_step_validate BEFORE INSERT OR UPDATE ON recipe_steps
     FOR EACH ROW EXECUTE FUNCTION fn_step_validate();
 
--- ukupno vreme recepta = zbir trajanja koraka
+-- total recipe time = sum of step durations
 CREATE FUNCTION fn_recipe_total_time() RETURNS trigger AS $$
 DECLARE
     v_recipe bigint;
@@ -407,7 +408,7 @@ END $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_recipe_total_time AFTER INSERT OR UPDATE OR DELETE ON recipe_steps
     FOR EACH ROW EXECUTE FUNCTION fn_recipe_total_time();
 
--- lista (koja nije trajna) se automatski arhivira kada je sve kupljeno
+-- a non-permanent list is archived automatically once everything is purchased
 CREATE FUNCTION fn_shopping_auto_archive() RETURNS trigger AS $$
 BEGIN
     UPDATE shopping_lists
@@ -424,28 +425,28 @@ CREATE TRIGGER trg_shopping_auto_archive AFTER UPDATE OF is_purchased ON shoppin
     FOR EACH ROW EXECUTE FUNCTION fn_shopping_auto_archive();
 
 -- ---------------------------------------------------------------------
--- 11. Pogledi i funkcije
+-- 11. Views and functions
 -- ---------------------------------------------------------------------
--- alergeni recepta (automatski, na osnovu namirnica)
+-- recipe allergens (derived automatically from ingredients)
 CREATE VIEW recipe_allergens AS
 SELECT DISTINCT ri.recipe_id, ia.allergen_id
   FROM recipe_ingredients ri
   JOIN ingredient_allergens ia ON ia.ingredient_id = ri.ingredient_id;
 
--- prosečna ocena i broj ocena
+-- average rating and number of ratings
 CREATE VIEW recipe_rating_stats AS
 SELECT recipe_id, round(avg(score), 2) AS avg_score, count(*) AS rating_count
   FROM ratings
  GROUP BY recipe_id;
 
--- popularni recepti: najveća prosečna ocena u poslednjih mesec dana
+-- popular recipes: highest average rating over the last month
 CREATE VIEW popular_recipes_30d AS
 SELECT recipe_id, round(avg(score), 2) AS avg_score, count(*) AS rating_count
   FROM ratings
  WHERE updated_at >= now() - interval '30 days'
  GROUP BY recipe_id;
 
--- pretraga po dostupnim namirnicama: recepti kojima nedostaje najviše p_max_missing namirnica
+-- search by available ingredients: recipes missing at most p_max_missing ingredients
 CREATE FUNCTION recipes_by_available_ingredients(p_ingredient_ids bigint[], p_max_missing int DEFAULT 0)
 RETURNS TABLE (recipe_id bigint, total_ingredients int, missing_count int) AS $$
     SELECT r.id,
@@ -461,36 +462,37 @@ RETURNS TABLE (recipe_id bigint, total_ingredients int, missing_count int) AS $$
 $$ LANGUAGE sql STABLE;
 
 -- ---------------------------------------------------------------------
--- 12. Početni podaci
+-- 12. Seed data
 -- ---------------------------------------------------------------------
 INSERT INTO meal_types (name) VALUES
-    ('Doručak'), ('Ručak'), ('Večera'), ('Glavna jela'),
-    ('Predjela'), ('Salate'), ('Deserti'), ('Pića');
+    ('Breakfast'), ('Lunch'), ('Dinner'), ('Main dishes'),
+    ('Appetizers'), ('Salads'), ('Desserts'), ('Drinks');
 
 INSERT INTO dish_types (name) VALUES
-    ('Supa'), ('Čorba'), ('Testenina'), ('Pica'), ('Sendvič'), ('Burger'), ('Rižoto'),
-    ('Jelo od mesa'), ('Jelo od ribe'), ('Jelo od povrća'), ('Pekarski proizvod'),
-    ('Kolač'), ('Torta'), ('Palačinke');
+    ('Soup'), ('Stew'), ('Pasta'), ('Pizza'), ('Sandwich'), ('Burger'), ('Risotto'),
+    ('Meat dish'), ('Fish dish'), ('Vegetable dish'), ('Bakery product'),
+    ('Pastry'), ('Cake'), ('Pancakes');
 
 INSERT INTO diet_types (name) VALUES
-    ('Vegetarijanska'), ('Veganska'), ('Posna'), ('Mrsna'), ('Hrono'), ('Peskatarijanska');
+    ('Vegetarian'), ('Vegan'), ('Fasting'), ('Non-fasting'), ('Macrobiotic'), ('Pescatarian');
 
 INSERT INTO ingredient_categories (name) VALUES
-    ('Povrće'), ('Voće'), ('Meso'), ('Riba'),
-    ('Mlečni proizvodi'), ('Žitarice'), ('Začini'), ('Orašasti plodovi');
+    ('Vegetables'), ('Fruit'), ('Meat'), ('Fish'),
+    ('Dairy products'), ('Grains'), ('Spices'), ('Nuts');
 
 INSERT INTO allergens (name) VALUES
-    ('Mleko'), ('Gluten'), ('Kikiriki'), ('Jaja'), ('Soja'), ('Orašasti plodovi'), ('Riba');
+    ('Milk'), ('Gluten'), ('Peanuts'), ('Eggs'), ('Soy'), ('Tree nuts'), ('Fish');
 
 INSERT INTO units (name, abbreviation) VALUES
-    ('gram', 'g'), ('kilogram', 'kg'), ('mililitar', 'ml'), ('litar', 'l'),
-    ('komad', 'kom'), ('kašika', 'kaš'), ('kašičica', 'kašič'), ('prstohvat', 'prst');
+    ('gram', 'g'), ('kilogram', 'kg'), ('milliliter', 'ml'), ('liter', 'l'),
+    ('piece', 'pc'), ('tablespoon', 'tbsp'), ('teaspoon', 'tsp'), ('pinch', 'pinch');
 
 INSERT INTO preparation_types (name, requires_duration) VALUES
-    ('Kuvanje', true), ('Pečenje', true), ('Prženje', true), ('Dinstanje', true),
-    ('Grilovanje', true), ('Pohovanje', true), ('Kuvanje na pari', true),
-    ('Priprema bez termičke obrade', false), ('Ostalo', false);
+    ('Boiling', true), ('Baking', true), ('Frying', true), ('Stewing', true),
+    ('Grilling', true), ('Breading and frying', true), ('Steaming', true),
+    ('No heat treatment', false), ('Other', false);
 
+-- Predefined administrator (generate password_hash in the backend, e.g. bcrypt):
 -- INSERT INTO users (username, email, password_hash, role, is_active)
 -- VALUES ('admin', 'admin@example.com', '<BCRYPT_HASH>', 'ADMIN', true);
 
