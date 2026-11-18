@@ -1,10 +1,3 @@
--- =====================================================================
--- RecipeWebApp - PostgreSQL šema
--- Pokretanje:
---   psql -U postgres -c "CREATE DATABASE recipe_app;"
---   psql -U postgres -d recipe_app -f recipe_app.sql
--- =====================================================================
-
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 BEGIN;
@@ -499,7 +492,6 @@ INSERT INTO preparation_types (name, requires_duration) VALUES
     ('Grilovanje', true), ('Pohovanje', true), ('Kuvanje na pari', true),
     ('Priprema bez termičke obrade', false), ('Ostalo', false);
 
--- Unapred određen administrator (password_hash generiši u backendu, npr. bcrypt):
 -- INSERT INTO users (username, email, password_hash, role, is_active)
 -- VALUES ('admin', 'admin@example.com', '<BCRYPT_HASH>', 'ADMIN', true);
 
