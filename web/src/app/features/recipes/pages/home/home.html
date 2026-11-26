@@ -1,0 +1,20 @@
+<h1>What are we cooking today?</h1>
+<p class="subtitle">Browse recipes from our community</p>
+
+<input type="text" class="search" placeholder="Search recipes..." (input)="onSearch($event)" />
+
+<div class="recipe-list">
+  @for (recipe of filteredRecipes(); track recipe.id) {
+    <div class="card">
+      <span class="tag">{{ recipe.dishType }}</span>
+      <h3>{{ recipe.title }}</h3>
+      <p class="story">{{ recipe.story }}</p>
+      <div class="info">
+        <span>{{ recipe.totalTimeMinutes }} min · {{ recipe.servings }} servings</span>
+        <span>by {{ recipe.author }}</span>
+      </div>
+    </div>
+  } @empty {
+    <p>No recipes found.</p>
+  }
+</div>
