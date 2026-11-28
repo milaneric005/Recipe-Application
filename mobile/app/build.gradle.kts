@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
-    id 'com.android.application'
-    id 'com.google.gms.google-services'
+    id ("com.google.gms.google-services")
 }
 
 android {
@@ -39,8 +38,13 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.constraintlayout)
     implementation(libs.material)
+    implementation(libs.navigation.fragment.ktx)
+    implementation(libs.navigation.ui.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.ext.junit)
-    implementation platform('com.google.firebase:firebase-bom:35.2.0')
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage")
 }
