@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="login_title">Welcome back</string>
+    <string name="hint_username_or_email">Username or email</string>
+    <string name="hint_password">Password</string>
+    <string name="btn_login">Log in</string>
+    <string name="link_forgot_password">Forgot password?</string>
+    <string name="link_register">Don\'t have an account? Register</string>
+
+    <string name="err_empty_fields">Please fill in all fields.</string>
+    <string name="err_invalid_username">Username must have at least 3 characters and no spaces or \'@\'.</string>
+    <string name="err_invalid_email">Enter a valid email address.</string>
+    <string name="err_weak_password">Password needs 8+ characters, with an uppercase letter, a lowercase letter and a digit.</string>
+    <string name="err_passwords_dont_match">Passwords do not match.</string>
+    <string name="err_username_taken">That username is already taken.</string>
+    <string name="err_email_taken">That email is already registered.</string>
+    <string name="err_invalid_credentials">Incorrect username/email or password.</string>
+    <string name="err_not_verified">Please confirm your email address first. Check your inbox.</string>
+    <string name="err_user_not_found">User account not found.</string>
+    <string name="err_unknown">Something went wrong. Please try again.</string>
+</resources>
